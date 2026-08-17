@@ -121,34 +121,57 @@ async function handleCallback(env: Env, callbackQuery: any): Promise<void> {
   }
 
   if (action === "appr") {
-    await dispatchWorkflow(env, stored.owner, stored.repo, "bugbot-create-pr.yml", {
+    const res = await dispatchWorkflow(env, stored.owner, stored.repo, "bugbot-create-pr.yml", {
       branch: stored.branch,
       description: stored.description,
       telegram_chat_id: chatId,
     });
-    await telegram(env, "answerCallbackQuery", { callback_query_id: callbackId, text: "מאושר! פותח PR..." });
-    if (messageId) {
-      await telegram(env, "editMessageCaption", {
-        chat_id: chatId,
-        message_id: messageId,
-        caption: `✅ אושר — פותח PR מ-${stored.branch}...`,
+    if (res.ok) {
+      await telegram(env, "answerCallbackQuery", { callback_query_id: callbackId, text: "מאושר! פותח PR..." });
+      if (messageId) {
+        await telegram(env, "editMessageCaption", {
+          chat_id: chatId,
+          message_id: messageId,
+          caption: `✅ אושר — פותח PR מ-${stored.branch}...`,
+        });
+      }
+      await env.BUGBOT_KV.delete(`pending:${id}`);
+    } else {
+      const errText = (await res.text()).slice(0, 300);
+      await telegram(env, "answerCallbackQuery", {
+        callback_query_id: callbackId,
+        text: "ההפעלה נכשלה, נסה שוב בעוד רגע",
+        show_alert: true,
       });
+      await telegram(env, "sendMessage", {
+        chat_id: chatId,
+        text: `❌ הפעלת bugbot-create-pr נכשלה (${res.status}). אפשר ללחוץ שוב על הכפתור לנסות שוב.\n\n${errText}`,
+      });
+      // Keep the KV entry so the same button click can be retried.
     }
   } else if (action === "rej") {
-    await dispatchWorkflow(env, stored.owner, stored.repo, "bugbot-cleanup.yml", {
+    const res = await dispatchWorkflow(env, stored.owner, stored.repo, "bugbot-cleanup.yml", {
       branch: stored.branch,
     });
-    await telegram(env, "answerCallbackQuery", { callback_query_id: callbackId, text: "בוטל." });
-    if (messageId) {
-      await telegram(env, "editMessageCaption", {
-        chat_id: chatId,
-        message_id: messageId,
-        caption: `❌ נדחה — הענף ${stored.branch} יימחק.`,
+    if (res.ok) {
+      await telegram(env, "answerCallbackQuery", { callback_query_id: callbackId, text: "בוטל." });
+      if (messageId) {
+        await telegram(env, "editMessageCaption", {
+          chat_id: chatId,
+          message_id: messageId,
+          caption: `❌ נדחה — הענף ${stored.branch} יימחק.`,
+        });
+      }
+      await env.BUGBOT_KV.delete(`pending:${id}`);
+    } else {
+      await telegram(env, "answerCallbackQuery", {
+        callback_query_id: callbackId,
+        text: "הביטול נכשל, נסה שוב בעוד רגע",
+        show_alert: true,
       });
+      // Keep the KV entry so the same button click can be retried.
     }
   }
-
-  await env.BUGBOT_KV.delete(`pending:${id}`);
 }
 
 async function handleRegisterApproval(request: Request, env: Env): Promise<Response> {

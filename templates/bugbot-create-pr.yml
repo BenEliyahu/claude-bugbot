@@ -1,0 +1,24 @@
+name: bugbot-create-pr
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        required: true
+        type: string
+      description:
+        required: true
+        type: string
+      telegram_chat_id:
+        required: true
+        type: string
+
+jobs:
+  create-pr:
+    uses: BenEliyahu/claude-bugbot/.github/workflows/reusable-create-pr.yml@main
+    with:
+      branch: ${{ inputs.branch }}
+      description: ${{ inputs.description }}
+      telegram_chat_id: ${{ inputs.telegram_chat_id }}
+    secrets:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

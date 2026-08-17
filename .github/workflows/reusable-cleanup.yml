@@ -1,0 +1,20 @@
+name: bugbot-reusable-cleanup
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Delete rejected branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/${{ inputs.branch }}" || true

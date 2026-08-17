@@ -1,0 +1,58 @@
+name: bugbot-reusable-create-pr
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+      description:
+        required: true
+        type: string
+      telegram_chat_id:
+        required: true
+        type: string
+    secrets:
+      TELEGRAM_BOT_TOKEN:
+        required: true
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_DESCRIPTION: ${{ inputs.description }}
+          PR_BRANCH: ${{ inputs.branch }}
+        run: |
+          printf 'Automated fix requested via Telegram.\n\nBug report: %s\n\n🤖 Generated with Claude Code\n' \
+            "$PR_DESCRIPTION" > pr_body.md
+          URL=$(gh pr create \
+            --head "$PR_BRANCH" \
+            --base main \
+            --title "bugbot: ${PR_DESCRIPTION}" \
+            --body-file pr_body.md \
+            --repo "${{ github.repository }}")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram with PR link
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.telegram_chat_id }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          TEXT=$(printf '✅ ה-PR מוכן:\n%s' "$PR_URL")
+          PAYLOAD=$(jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$TEXT" \
+            '{chat_id: $chat_id, text: $text}')
+          curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "content-type: application/json" \
+            -d "$PAYLOAD"

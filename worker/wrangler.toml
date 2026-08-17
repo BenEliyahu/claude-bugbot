@@ -1,0 +1,17 @@
+name = "claude-bugbot"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+# Create the KV namespace once with:
+#   npx wrangler kv namespace create BUGBOT_KV
+# then paste the returned id below.
+[[kv_namespaces]]
+binding = "BUGBOT_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Secrets are NOT set here — set them with `npx wrangler secret put <NAME>`:
+#   TELEGRAM_BOT_TOKEN
+#   TELEGRAM_WEBHOOK_SECRET
+#   GITHUB_TOKEN
+#   ALLOWED_CHAT_ID
+#   BUGBOT_INTERNAL_SECRET

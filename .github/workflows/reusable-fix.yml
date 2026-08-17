@@ -1,0 +1,122 @@
+name: bugbot-reusable-fix
+
+on:
+  workflow_call:
+    inputs:
+      bug_description:
+        required: true
+        type: string
+      telegram_chat_id:
+        required: true
+        type: string
+      dev_url:
+        required: false
+        type: string
+        default: "http://localhost:3000"
+      dev_command:
+        required: false
+        type: string
+        default: "npm run dev"
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+      TELEGRAM_BOT_TOKEN:
+        required: true
+      BUGBOT_INTERNAL_SECRET:
+        required: true
+      BUGBOT_WORKER_URL:
+        required: true
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Create fix branch
+        id: branch
+        run: |
+          BRANCH="bugbot/$(date +%s)"
+          git checkout -b "$BRANCH"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Ask Claude Code to fix the bug
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          BUG_DESCRIPTION: ${{ inputs.bug_description }}
+        run: |
+          claude -p "There is a bug report for this repository. Investigate the codebase, make the minimal necessary code change to fix it, and stop. Do not ask any questions — use your best judgment. Bug report: ${BUG_DESCRIPTION}" \
+            --dangerously-skip-permissions
+
+      - name: Commit changes
+        id: commit
+        env:
+          BUG_DESCRIPTION: ${{ inputs.bug_description }}
+        run: |
+          git config user.name "claude-bugbot"
+          git config user.email "bugbot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "bugbot: ${BUG_DESCRIPTION}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: No changes — notify and stop
+        if: steps.commit.outputs.changed == 'false'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.telegram_chat_id }}
+        run: |
+          PAYLOAD=$(jq -n --arg chat_id "$TELEGRAM_CHAT_ID" \
+            --arg text "🤔 קלוד לא ביצע שום שינוי בקוד. ייתכן שהוא לא הצליח לשחזר/לאתר את הבאג. נסה לתאר אותו יותר בפירוט." \
+            '{chat_id: $chat_id, text: $text}')
+          curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "content-type: application/json" \
+            -d "$PAYLOAD"
+
+      - name: Push branch
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: git push origin "${BRANCH}"
+
+      - name: Install dependencies
+        if: steps.commit.outputs.changed == 'true'
+        run: npm ci
+
+      - name: Install Playwright
+        if: steps.commit.outputs.changed == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Start app and take screenshot
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          DEV_URL: ${{ inputs.dev_url }}
+          DEV_COMMAND: ${{ inputs.dev_command }}
+        run: |
+          bash -c "${DEV_COMMAND}" &
+          npx wait-on "${DEV_URL}" --timeout 120000
+          node .github/scripts/screenshot.mjs "${DEV_URL}" screenshot.png
+
+      - name: Register approval + notify Telegram
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          BUGBOT_WORKER_URL: ${{ secrets.BUGBOT_WORKER_URL }}
+          BUGBOT_INTERNAL_SECRET: ${{ secrets.BUGBOT_INTERNAL_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.telegram_chat_id }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+          BUG_DESCRIPTION: ${{ inputs.bug_description }}
+          REPO: ${{ github.repository }}
+        run: node .github/scripts/notify-fix-ready.mjs

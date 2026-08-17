@@ -1,0 +1,14 @@
+name: bugbot-cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        required: true
+        type: string
+
+jobs:
+  cleanup:
+    uses: BenEliyahu/claude-bugbot/.github/workflows/reusable-cleanup.yml@main
+    with:
+      branch: ${{ inputs.branch }}

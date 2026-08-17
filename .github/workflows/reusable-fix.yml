@@ -54,8 +54,19 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           BUG_DESCRIPTION: ${{ inputs.bug_description }}
         run: |
-          claude -p "There is a bug report for this repository. Investigate the codebase, make the minimal necessary code change to fix it, and stop. Do not ask any questions — use your best judgment. Bug report: ${BUG_DESCRIPTION}" \
+          claude -p "There is a bug report for this repository. Investigate the codebase, make the minimal necessary code change to fix it, and stop. Do not ask any questions — use your best judgment. Bug report: ${BUG_DESCRIPTION}
+
+          After making the fix, if the visual result is localized to one specific area of the rendered page (a section, component, or element — e.g. a footer, a specific card, a form), write a single CSS selector that uniquely targets that area to a file named .bugbot-target.txt at the repository root (just the selector, one line, nothing else). If the change affects the whole page, isn't visual, or you aren't confident about a specific selector, do not create this file." \
             --dangerously-skip-permissions
+
+      - name: Extract screenshot target hint
+        id: target
+        run: |
+          if [ -f .bugbot-target.txt ]; then
+            SELECTOR=$(tr -d '\n' < .bugbot-target.txt)
+            echo "selector=$SELECTOR" >> "$GITHUB_OUTPUT"
+            rm .bugbot-target.txt
+          fi
 
       - name: Commit changes
         id: commit
@@ -104,10 +115,11 @@ jobs:
         env:
           DEV_URL: ${{ inputs.dev_url }}
           DEV_COMMAND: ${{ inputs.dev_command }}
+          SCREENSHOT_SELECTOR: ${{ steps.target.outputs.selector }}
         run: |
           bash -c "${DEV_COMMAND}" &
           npx wait-on "${DEV_URL}" --timeout 120000
-          node .github/scripts/screenshot.mjs "${DEV_URL}" screenshot.png
+          node .github/scripts/screenshot.mjs "${DEV_URL}" screenshot.png "${SCREENSHOT_SELECTOR}"
 
       - name: Register approval + notify Telegram
         if: steps.commit.outputs.changed == 'true'

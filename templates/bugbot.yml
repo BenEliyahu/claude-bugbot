@@ -14,6 +14,8 @@ jobs:
   fix:
     # Replace BenEliyahu with your GitHub username/org if different.
     uses: BenEliyahu/claude-bugbot/.github/workflows/reusable-fix.yml@main
+    permissions:
+      contents: write
     with:
       bug_description: ${{ inputs.bug_description }}
       telegram_chat_id: ${{ inputs.telegram_chat_id }}

@@ -10,5 +10,7 @@ on:
 jobs:
   cleanup:
     uses: BenEliyahu/claude-bugbot/.github/workflows/reusable-cleanup.yml@main
+    permissions:
+      contents: write
     with:
       branch: ${{ inputs.branch }}

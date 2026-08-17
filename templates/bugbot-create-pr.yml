@@ -16,6 +16,9 @@ on:
 jobs:
   create-pr:
     uses: BenEliyahu/claude-bugbot/.github/workflows/reusable-create-pr.yml@main
+    permissions:
+      contents: read
+      pull-requests: write
     with:
       branch: ${{ inputs.branch }}
       description: ${{ inputs.description }}

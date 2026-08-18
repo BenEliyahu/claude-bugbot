@@ -1,31 +1,32 @@
 # claude-bugbot
 
-בוט טלגרם: מדווחים על באג, Claude Code מתקן אותו ב-GitHub Actions, שולח סקרינשוט
-של האפליקציה החיה לאישור, ובלחיצת כפתור פותח PR ושולח לינק.
+A Telegram bot: report a bug, Claude Code fixes it via GitHub Actions, sends a
+screenshot of the live app for approval, and with a button tap opens a PR and
+sends you the link.
 
 ```
 Telegram → Cloudflare Worker → GitHub Actions (workflow_dispatch)
-                                   ├─ Claude Code מתקן, פותח branch
-                                   ├─ מריץ את האפליקציה + סקרינשוט (Playwright)
-                                   └─ שולח סקרינשוט + כפתורי אישור/דחייה לטלגרם
+                                   ├─ Claude Code fixes it, opens a branch
+                                   ├─ runs the app + takes a screenshot (Playwright)
+                                   └─ sends screenshot + approve/reject buttons to Telegram
                                         │
-                                   (אישור) → Worker → GitHub Actions → פותח PR → שולח לינק
+                                   (approve) → Worker → GitHub Actions → opens PR → sends link
 ```
 
-## התקנה חד-פעמית (global setup)
+## One-Time Global Setup
 
 ### 1. GitHub Personal Access Token
 
-ל-Worker צריך PAT כדי להפעיל workflows בריפואים שלך.
+The Worker needs a PAT to trigger workflows in your repos.
 
 1. https://github.com/settings/tokens?type=beta → **Generate new token** (Fine-grained)
-2. Repository access: **All repositories** (כדי שיעבוד על כל פרויקט עתידי)
+2. Repository access: **All repositories** (so it works on any future project)
 3. Permissions: **Actions: Read and write**, **Contents: Read and write**
-4. שמור את ה-token — נזדקק לו בשלב 3.
+4. Save the token — you'll need it in step 3.
 
-### 2. יצירת KV Namespace
+### 2. Create a KV Namespace
 
-בתוך `worker/`:
+Inside `worker/`:
 
 ```bash
 npm install
@@ -33,28 +34,30 @@ npx wrangler login
 npx wrangler kv namespace create BUGBOT_KV
 ```
 
-יחזיר `id` — הדבק אותו ב-`worker/wrangler.toml` במקום `REPLACE_WITH_KV_NAMESPACE_ID`.
+This returns an `id` — paste it into `worker/wrangler.toml` in place of
+`REPLACE_WITH_KV_NAMESPACE_ID`.
 
-### 3. הגדרת Secrets ל-Worker
+### 3. Set Worker Secrets
 
 ```bash
 cd worker
-npx wrangler secret put TELEGRAM_BOT_TOKEN        # הטוקן מ-BotFather
-npx wrangler secret put TELEGRAM_WEBHOOK_SECRET    # מחרוזת אקראית, תמציא בעצמך (openssl rand -hex 20)
-npx wrangler secret put GITHUB_TOKEN               # ה-PAT משלב 1
-npx wrangler secret put ALLOWED_CHAT_ID            # ה-Chat ID שלך מ-@userinfobot
-npx wrangler secret put BUGBOT_INTERNAL_SECRET     # מחרוזת אקראית נוספת (openssl rand -hex 20)
+npx wrangler secret put TELEGRAM_BOT_TOKEN        # the token from BotFather
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET    # random string you make up (openssl rand -hex 20)
+npx wrangler secret put GITHUB_TOKEN               # the PAT from step 1
+npx wrangler secret put ALLOWED_CHAT_ID            # your Chat ID from @userinfobot
+npx wrangler secret put BUGBOT_INTERNAL_SECRET     # another random string (openssl rand -hex 20)
 ```
 
-### 4. פריסה
+### 4. Deploy
 
 ```bash
 npx wrangler deploy
 ```
 
-יחזיר URL כמו `https://claude-bugbot.<your-subdomain>.workers.dev` — שמור אותו.
+This returns a URL like `https://claude-bugbot.<your-subdomain>.workers.dev` —
+save it.
 
-### 5. רישום ה-Webhook בטלגרם
+### 5. Register the Webhook with Telegram
 
 ```bash
 curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
@@ -62,20 +65,21 @@ curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
   -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
 ```
 
-(אותו `TELEGRAM_WEBHOOK_SECRET` שהגדרת בשלב 3.)
+(The same `TELEGRAM_WEBHOOK_SECRET` you set in step 3.)
 
-### 6. Claude Code OAuth token (חד-פעמי, לא תלוי בפרויקט)
+### 6. Claude Code OAuth Token (one-time, project-independent)
 
 ```bash
 claude setup-token
 ```
 
-שומרים את ה-token שמודפס — הוא ישמש בכל הריפואים.
+Save the token that gets printed — it will be used across all repos.
 
-### 7. דחיפת המאגר הזה ל-GitHub
+### 7. Push This Repo to GitHub
 
-**המאגר הזה חייב להיות ציבורי** (או פרטי + הרשאות מתאימות) כדי ש-`uses:
-BenEliyahu/claude-bugbot/.github/workflows/...@main` יעבוד מכל ריפו אחר שלך.
+**This repo must be public** (or private with the right permissions) so that
+`uses: BenEliyahu/claude-bugbot/.github/workflows/...@main` works from any of
+your other repos.
 
 ```bash
 gh repo create claude-bugbot --public --source=. --remote=origin --push
@@ -83,36 +87,40 @@ gh repo create claude-bugbot --public --source=. --remote=origin --push
 
 ---
 
-## הוספת פרויקט חדש (בכל פעם שיוצרים ריפו חדש)
+## Adding a New Project (every time you create a new repo)
 
 ```bash
 cp scripts/.env.bugbot.example scripts/.env.bugbot
-# מלא שם: CLAUDE_CODE_OAUTH_TOKEN, TELEGRAM_BOT_TOKEN, BUGBOT_INTERNAL_SECRET, BUGBOT_WORKER_URL
+# fill in: CLAUDE_CODE_OAUTH_TOKEN, TELEGRAM_BOT_TOKEN, BUGBOT_INTERNAL_SECRET, BUGBOT_WORKER_URL
 
 ./scripts/setup-new-repo.sh /path/to/new/project
 ```
 
-הסקריפט מעתיק את קבצי ה-workflow והסקריפטים הנדרשים, ומגדיר את ה-secrets בריפו
-החדש דרך `gh secret set`. בסוף — תבדוק את `dev_url`/`dev_command` ב-
-`.github/workflows/bugbot.yml` (ברירת המחדל: `npm run dev` על פורט 3000), תוסיף
-`playwright` ו-`wait-on` כ-devDependencies, ותדחוף.
+The script copies over the required workflow and script files, and sets up
+the secrets in the new repo via `gh secret set`. Afterward — check the
+`dev_url`/`dev_command` in `.github/workflows/bugbot.yml` (default: `npm run
+dev` on port 3000), add `playwright` and `wait-on` as devDependencies, and
+push.
 
-## שימוש
+## Usage
 
-בטלגרם, לצ'אט עם הבוט:
+In Telegram, chat with the bot:
 
 ```
-/fix BenEliyahu/Portfolio: הכפתור "צור קשר" לא מגיב בלחיצה במובייל
+/fix BenEliyahu/Portfolio: the "Contact" button doesn't respond to taps on mobile
 ```
 
-הבוט יגיב שהוא מתחיל, ותוך כמה דקות ישלח סקרינשוט של האפליקציה עם השינוי +
-כפתורי ✅/❌. אישור פותח PR ושולח לינק; דחייה מוחקת את הענף.
+The bot will reply that it's starting, and within a few minutes will send a
+screenshot of the app with the change applied, plus ✅/❌ buttons. Approving
+opens a PR and sends the link; rejecting deletes the branch.
 
-## מגבלות ידועות (MVP)
+## Known Limitations (MVP)
 
-- תומך בפרויקטי Node/Next.js שרצים עם `npm run dev` על פורט קבוע. לפרויקט אחר
-  צריך להתאים את `dev_url`/`dev_command`.
-- אין ולידציה שה-diff שקלוד עשה בטוח (למשל לא רץ linter/טסטים) — שקול להוסיף
-  שלב `npm run lint && npm test` לפני שליחת הסקרינשוט.
-- כל ריפו חדש דורש הגדרת 4 secrets בנפרד (אין ל-GitHub personal account
-  secrets ברמת ה-org) — `setup-new-repo.sh` עושה את זה בפקודה אחת.
+- Supports Node/Next.js projects that run with `npm run dev` on a fixed port.
+  For other project types you'll need to adjust `dev_url`/`dev_command`.
+- There's no validation that Claude's diff is safe (e.g. no linter/test run) —
+  consider adding an `npm run lint && npm test` step before sending the
+  screenshot.
+- Every new repo requires setting up 4 secrets separately (GitHub personal
+  accounts don't have org-level secrets) — `setup-new-repo.sh` handles this
+  in one command.
